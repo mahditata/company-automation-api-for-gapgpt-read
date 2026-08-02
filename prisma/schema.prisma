@@ -1,0 +1,889 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ======================================================
+// Existing enums
+// ======================================================
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  READ
+  REVIEWED
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  REPORT_CREATED
+  REPORT_STATUS_CHANGED
+  REPORT_COMMENT_ADDED
+  WORKFLOW_REQUEST_CREATED
+  WORKFLOW_REQUEST_APPROVED
+  WORKFLOW_REQUEST_REJECTED
+  WORKFLOW_REQUEST_FORWARDED
+  WORK_CREATED
+  WORK_STATUS_CHANGED
+  WORK_ASSIGNED
+  WORK_TASK_STATUS_CHANGED
+  WORK_COMMENT_ADDED
+  WORK_REVISION_REQUESTED
+}
+
+// ======================================================
+// Workflow enums
+// ======================================================
+
+enum WorkflowRequestType {
+  ADVANCE
+  LOAN
+  PART_SUPPLY
+  MATERIAL_SUPPLY
+  EQUIPMENT_SUPPLY
+  GENERAL
+}
+
+enum WorkflowAssigneeType {
+  DIRECT_MANAGER
+  ROLE
+  MANUAL
+}
+
+enum WorkflowRequestStatus {
+  DRAFT
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  RETURNED
+  OBJECTED
+  RESUBMITTED
+  REFERRED
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkflowRequestStepStatus {
+  PENDING
+  CURRENT
+  APPROVED
+  REJECTED
+  RETURNED
+  OBJECTED
+  RESUBMITTED
+  SKIPPED
+  COMPLETED
+}
+
+enum WorkflowActionType {
+  CREATED
+  SUBMITTED
+  APPROVED
+  REJECTED
+  RETURNED
+  OBJECTED
+  RESUBMITTED
+  REFERRED
+  ASSIGNED
+  UNASSIGNED
+  COMMENTED
+  ATTACHMENT_ADDED
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkflowAssignmentStatus {
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+// ======================================================
+// Collaborative Work Management Enums
+// ======================================================
+
+enum WorkType {
+  NORMAL
+  DAILY
+}
+
+enum WorkStatus {
+  TODO
+  IN_PROGRESS
+  PENDING_APPROVAL
+  COMPLETED
+  NEEDS_REVISION
+}
+
+enum WorkTaskStatus {
+  TODO
+  IN_PROGRESS
+  PENDING_APPROVAL
+  COMPLETED
+  NEEDS_REVISION
+}
+
+enum WorkActivityType {
+  CREATED
+  UPDATED
+  STATUS_CHANGED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+  TASK_ADDED
+  TASK_UPDATED
+  TASK_STATUS_CHANGED
+  COMMENT_ADDED
+  ATTACHMENT_ADDED
+  DELETED
+  RESTORED
+}
+
+enum DailyWorkScheduleType {
+  EVERY_DAY
+  WORK_DAYS
+  CUSTOM_DAYS
+}
+
+enum DailyOccurrenceGenerationType {
+  AUTOMATIC
+  MANUAL
+}
+
+// ======================================================
+// Existing models
+// ======================================================
+
+model Department {
+  id          Int     @id @default(autoincrement())
+  name        String
+  description String?
+
+  parentId Int?
+  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children Department[] @relation("DepartmentHierarchy")
+
+  users        User[]
+  dailyReports DailyReport[]
+
+  workflowRequests WorkflowRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  title       String
+  description String?
+
+  users User[]
+
+  workflowStepDefinitions WorkflowStepDefinition[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id            Int     @id @default(autoincrement())
+  firstName     String
+  lastName      String
+  username      String  @unique
+  password      String
+  phone         String?
+  nationalCode  String?
+  positionTitle String?
+
+  mustChangePassword Boolean    @default(true)
+  status             UserStatus @default(ACTIVE)
+
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  roleId Int?
+  role   Role? @relation(fields: [roleId], references: [id])
+
+  managerId    Int?
+  manager      User?  @relation("UserManager", fields: [managerId], references: [id])
+  subordinates User[] @relation("UserManager")
+
+  // Existing Daily Reports and Notification relations
+  dailyReports        DailyReport[]        @relation("DailyReportUser")
+  managedDailyReports DailyReport[]        @relation("DailyReportManager")
+  dailyReportComments DailyReportComment[]
+  notifications       Notification[]       @relation("NotificationRecipient")
+
+  // Workflow request relations
+  createdWorkflowRequests WorkflowRequest[] @relation("WorkflowRequestCreator")
+  currentWorkflowRequests WorkflowRequest[] @relation("WorkflowRequestCurrentAssignee")
+
+  // Workflow step relations
+  assignedWorkflowSteps WorkflowRequestStep[] @relation("WorkflowRequestStepAssignee")
+  actedWorkflowSteps    WorkflowRequestStep[] @relation("WorkflowRequestStepActor")
+
+  // Workflow action relations
+  workflowActions             WorkflowRequestAction[] @relation("WorkflowRequestActionActor")
+  workflowActionsFromAssignee WorkflowRequestAction[] @relation("WorkflowActionFromAssignee")
+  workflowActionsToAssignee   WorkflowRequestAction[] @relation("WorkflowActionToAssignee")
+
+  // Workflow assignment relations
+  workflowAssignments        WorkflowRequestAssignment[] @relation("WorkflowAssignmentAssignee")
+  createdWorkflowAssignments WorkflowRequestAssignment[] @relation("WorkflowAssignmentAssignedBy")
+
+  // Workflow attachment relations
+  uploadedWorkflowAttachments WorkflowRequestAttachment[] @relation("WorkflowAttachmentUploader")
+
+  // Collaborative Work Management relations
+  createdWorks         Work[]                @relation("WorkCreator")
+  workMemberships      WorkMember[]
+  assignedWorkTasks    WorkTask[]            @relation("WorkTaskAssignee")
+  workComments         WorkComment[]
+  workActivities       WorkActivity[]
+  uploadedAttachments  WorkAttachment[]      @relation("WorkAttachmentUploader")
+  dailyWorkOccurrences DailyWorkOccurrence[] @relation("DailyWorkOccurrenceCreator")
+  dailyWorkTasks       DailyWorkTask[]       @relation("DailyWorkTaskAssignee")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ======================================================
+// Existing Daily Report models
+// ======================================================
+
+model DailyReport {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation("DailyReportUser", fields: [userId], references: [id])
+
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  managerId Int?
+  manager   User? @relation("DailyReportManager", fields: [managerId], references: [id])
+
+  reportDate  DateTime
+  title       String
+  content     String   @db.VarChar(500)
+  problems    String?
+  suggestions String?
+
+  status ReportStatus @default(SUBMITTED)
+
+  managerComment  String?
+  managerActionAt DateTime?
+  readAt          DateTime?
+
+  attachments   DailyReportAttachment[]
+  comments      DailyReportComment[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DailyReportAttachment {
+  id Int @id @default(autoincrement())
+
+  reportId Int
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  fileName String
+  filePath String
+  mimeType String
+  size     Int
+
+  createdAt DateTime @default(now())
+}
+
+model DailyReportComment {
+  id Int @id @default(autoincrement())
+
+  reportId Int
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  text String @db.VarChar(1000)
+
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  message String           @db.VarChar(1000)
+  link    String?
+
+  reportId Int?
+  report   DailyReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  workflowRequestId Int?
+  workflowRequest   WorkflowRequest? @relation(fields: [workflowRequestId], references: [id], onDelete: Cascade)
+
+  workId Int?
+  work   Work? @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([reportId])
+  @@index([workflowRequestId])
+  @@index([workId])
+}
+
+// ======================================================
+// Workflow definition models
+// ======================================================
+
+model WorkflowDefinition {
+  id Int @id @default(autoincrement())
+
+  code        String  @unique @db.VarChar(100)
+  title       String  @db.VarChar(200)
+  description String?
+
+  type WorkflowRequestType @unique
+
+  isManual Boolean @default(false)
+  isActive Boolean @default(true)
+
+  steps    WorkflowStepDefinition[]
+  requests WorkflowRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([type])
+}
+
+model WorkflowStepDefinition {
+  id Int @id @default(autoincrement())
+
+  workflowDefinitionId Int
+  workflowDefinition   WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+
+  stepOrder   Int
+  code        String  @db.VarChar(100)
+  title       String  @db.VarChar(200)
+  description String?
+
+  assigneeType WorkflowAssigneeType
+
+  roleId Int?
+  role   Role? @relation(fields: [roleId], references: [id])
+
+  canReject               Boolean @default(true)
+  canReturn               Boolean @default(true)
+  requiresApprovalComment Boolean @default(false)
+  isActive                Boolean @default(true)
+
+  requestSteps WorkflowRequestStep[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workflowDefinitionId, stepOrder])
+  @@unique([workflowDefinitionId, code])
+  @@index([workflowDefinitionId, isActive])
+  @@index([roleId])
+}
+
+// ======================================================
+// Workflow request execution models
+// ======================================================
+
+model WorkflowRequest {
+  id Int @id @default(autoincrement())
+
+  requestNumber String @unique @db.VarChar(50)
+
+  workflowDefinitionId Int
+  workflowDefinition   WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id])
+
+  type WorkflowRequestType
+
+  creatorId Int
+  creator   User @relation("WorkflowRequestCreator", fields: [creatorId], references: [id])
+
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  title       String  @db.VarChar(250)
+  description String?
+  formData    Json?
+
+  status WorkflowRequestStatus @default(DRAFT)
+
+  currentStepOrder Int?
+
+  currentAssigneeId Int?
+  currentAssignee   User? @relation("WorkflowRequestCurrentAssignee", fields: [currentAssigneeId], references: [id])
+
+  version Int @default(1)
+
+  submittedAt DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  steps         WorkflowRequestStep[]
+  actions       WorkflowRequestAction[]
+  assignments   WorkflowRequestAssignment[]
+  attachments   WorkflowRequestAttachment[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([creatorId, createdAt])
+  @@index([departmentId])
+  @@index([currentAssigneeId, status])
+  @@index([workflowDefinitionId])
+  @@index([type, status])
+  @@index([status, createdAt])
+}
+
+model WorkflowRequestStep {
+  id Int @id @default(autoincrement())
+
+  requestId Int
+  request   WorkflowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  stepDefinitionId Int?
+  stepDefinition   WorkflowStepDefinition? @relation(fields: [stepDefinitionId], references: [id], onDelete: SetNull)
+
+  stepOrder Int
+  code      String @db.VarChar(100)
+  title     String @db.VarChar(200)
+
+  assigneeType WorkflowAssigneeType
+
+  assigneeId Int?
+  assignee   User? @relation("WorkflowRequestStepAssignee", fields: [assigneeId], references: [id])
+
+  status WorkflowRequestStepStatus @default(PENDING)
+
+  comment String? @db.VarChar(2000)
+
+  actedById Int?
+  actedBy   User? @relation("WorkflowRequestStepActor", fields: [actedById], references: [id])
+
+  activatedAt DateTime?
+  actedAt     DateTime?
+  completedAt DateTime?
+
+  assignments WorkflowRequestAssignment[]
+  actions     WorkflowRequestAction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([requestId, stepOrder])
+  @@index([requestId, status])
+  @@index([assigneeId, status])
+  @@index([stepDefinitionId])
+}
+
+model WorkflowRequestAction {
+  id Int @id @default(autoincrement())
+
+  requestId Int
+  request   WorkflowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  stepId Int?
+  step   WorkflowRequestStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  actorId Int
+  actor   User @relation("WorkflowRequestActionActor", fields: [actorId], references: [id])
+
+  action WorkflowActionType
+
+  fromStatus WorkflowRequestStatus?
+  toStatus   WorkflowRequestStatus?
+
+  fromAssigneeId Int?
+  fromAssignee   User? @relation("WorkflowActionFromAssignee", fields: [fromAssigneeId], references: [id])
+
+  toAssigneeId Int?
+  toAssignee   User? @relation("WorkflowActionToAssignee", fields: [toAssigneeId], references: [id])
+
+  comment  String? @db.VarChar(2000)
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([requestId, createdAt])
+  @@index([stepId])
+  @@index([actorId, createdAt])
+  @@index([action])
+}
+
+model WorkflowRequestAssignment {
+  id Int @id @default(autoincrement())
+
+  requestId Int
+  request   WorkflowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  stepId Int
+  step   WorkflowRequestStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  assigneeId Int
+  assignee   User @relation("WorkflowAssignmentAssignee", fields: [assigneeId], references: [id])
+
+  assignedById Int?
+  assignedBy   User? @relation("WorkflowAssignmentAssignedBy", fields: [assignedById], references: [id])
+
+  status WorkflowAssignmentStatus @default(ACTIVE)
+
+  assignedAt DateTime  @default(now())
+  endedAt    DateTime?
+
+  reason String? @db.VarChar(1000)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([requestId, assignedAt])
+  @@index([stepId, status])
+  @@index([assigneeId, status])
+}
+
+model WorkflowRequestAttachment {
+  id Int @id @default(autoincrement())
+
+  requestId Int
+  request   WorkflowRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  uploadedById Int
+  uploadedBy   User @relation("WorkflowAttachmentUploader", fields: [uploadedById], references: [id])
+
+  fileName String
+  filePath String
+  mimeType String
+  size     Int
+
+  createdAt DateTime @default(now())
+
+  @@index([requestId])
+  @@index([uploadedById])
+}
+
+// ======================================================
+// Collaborative Work Management Models
+// ======================================================
+
+model Work {
+  id          Int        @id @default(autoincrement())
+  title       String     @db.VarChar(250)
+  description String?    @db.Text
+  type        WorkType   @default(NORMAL)
+  status      WorkStatus @default(TODO)
+  progress    Float      @default(0.0)
+
+  creatorId Int
+  creator   User @relation("WorkCreator", fields: [creatorId], references: [id])
+
+  deadline DateTime?
+
+  // Soft Delete
+  deletedAt DateTime?
+
+  members       WorkMember[]
+  tasks         WorkTask[]
+  comments      WorkComment[]
+  attachments   WorkAttachment[]
+  activities    WorkActivity[]
+  notifications Notification[]
+  occurrences   DailyWorkOccurrence[]
+
+  // Daily Work schedule exists only when type is DAILY.
+  dailySchedule DailyWorkSchedule?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+model WorkMember {
+  id     Int  @id @default(autoincrement())
+  workId Int
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([workId, userId])
+  @@index([workId])
+  @@index([userId])
+}
+
+model WorkTask {
+  id     Int  @id @default(autoincrement())
+  workId Int
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  title       String         @db.VarChar(250)
+  description String?        @db.Text
+  status      WorkTaskStatus @default(TODO)
+  deadline    DateTime?
+
+  // For DAILY works, this value determines the task deadline
+  // relative to the occurrence date, in minutes from 00:00.
+  // Example: 840 means 14:00 on the occurrence date.
+  dailyDeadlineOffsetMinutes Int?
+
+  assigneeId Int?
+  assignee   User? @relation("WorkTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  attachments WorkAttachment[]
+  comments    WorkComment[]
+  activities  WorkActivity[]
+
+  // Daily task copies generated from this template task.
+  dailyTasks DailyWorkTask[] @relation("DailyWorkTaskSource")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([deadline])
+}
+
+model DailyWorkSchedule {
+  id Int @id @default(autoincrement())
+
+  workId Int  @unique
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  scheduleType DailyWorkScheduleType @default(EVERY_DAY)
+
+  // Used when scheduleType is CUSTOM_DAYS.
+  // JavaScript weekday convention:
+  // 0 = Sunday, 1 = Monday, ... , 6 = Saturday
+  weekDays Int[] @default([])
+
+  generationHour   Int @default(0)
+  generationMinute Int @default(5)
+
+  timezone String @default("Asia/Tehran") @db.VarChar(100)
+
+  startDate DateTime  @db.Date
+  endDate   DateTime? @db.Date
+
+  isActive Boolean @default(true)
+
+  lastGeneratedAt DateTime?
+  nextRunAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, nextRunAt])
+  @@index([scheduleType])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+model DailyWorkOccurrence {
+  id     Int  @id @default(autoincrement())
+  workId Int
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  // The calendar date of this occurrence without a time component.
+  date DateTime @db.Date
+
+  status   WorkStatus @default(TODO)
+  progress Float      @default(0.0)
+
+  generationType DailyOccurrenceGenerationType @default(AUTOMATIC)
+
+  creatorId Int
+  creator   User @relation("DailyWorkOccurrenceCreator", fields: [creatorId], references: [id])
+
+  tasks       DailyWorkTask[]
+  comments    WorkComment[]
+  attachments WorkAttachment[]
+  activities  WorkActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workId, date])
+  @@index([workId])
+  @@index([date])
+  @@index([status])
+  @@index([creatorId])
+  @@index([generationType])
+}
+
+model DailyWorkTask {
+  id           Int                 @id @default(autoincrement())
+  occurrenceId Int
+  occurrence   DailyWorkOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  // The WorkTask template from which this daily task was generated.
+  sourceTaskId Int?
+  sourceTask   WorkTask? @relation("DailyWorkTaskSource", fields: [sourceTaskId], references: [id], onDelete: SetNull)
+
+  title       String         @db.VarChar(250)
+  description String?        @db.Text
+  status      WorkTaskStatus @default(TODO)
+
+  deadline DateTime?
+
+  assigneeId Int?
+  assignee   User? @relation("DailyWorkTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  submittedAt DateTime?
+  reviewedAt  DateTime?
+  completedAt DateTime?
+
+  attachments WorkAttachment[]
+  comments    WorkComment[]
+  activities  WorkActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([occurrenceId])
+  @@index([sourceTaskId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([deadline])
+  @@index([submittedAt])
+  @@index([completedAt])
+}
+
+model WorkAttachment {
+  id     Int  @id @default(autoincrement())
+  workId Int
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  // An attachment always belongs to Work and can additionally
+  // belong to one task or one daily occurrence.
+  taskId Int?
+  task   WorkTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  occurrenceId Int?
+  occurrence   DailyWorkOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  dailyWorkTaskId Int?
+  dailyWorkTask   DailyWorkTask? @relation(fields: [dailyWorkTaskId], references: [id], onDelete: Cascade)
+
+  fileName String
+  filePath String
+  mimeType String
+  size     Int
+
+  uploadedById Int
+  uploadedBy   User @relation("WorkAttachmentUploader", fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([workId])
+  @@index([taskId])
+  @@index([occurrenceId])
+  @@index([dailyWorkTaskId])
+  @@index([uploadedById])
+}
+
+model WorkComment {
+  id     Int  @id @default(autoincrement())
+  workId Int
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional relation to a normal/template WorkTask.
+  taskId Int?
+  task   WorkTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  // Optional relation to a complete daily occurrence.
+  occurrenceId Int?
+  occurrence   DailyWorkOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  // Optional relation to a specific task inside a daily occurrence.
+  dailyWorkTaskId Int?
+  dailyWorkTask   DailyWorkTask? @relation(fields: [dailyWorkTaskId], references: [id], onDelete: Cascade)
+
+  text String @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([workId])
+  @@index([userId])
+  @@index([taskId])
+  @@index([occurrenceId])
+  @@index([dailyWorkTaskId])
+  @@index([workId, createdAt])
+}
+
+model WorkActivity {
+  id     Int  @id @default(autoincrement())
+  workId Int
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional relation to a normal/template task.
+  taskId Int?
+  task   WorkTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  // Optional relation to a complete daily occurrence.
+  occurrenceId Int?
+  occurrence   DailyWorkOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  // Optional relation to a specific daily task.
+  dailyWorkTaskId Int?
+  dailyWorkTask   DailyWorkTask? @relation(fields: [dailyWorkTaskId], references: [id], onDelete: Cascade)
+
+  type WorkActivityType
+
+  description String? @db.Text
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([workId])
+  @@index([userId])
+  @@index([taskId])
+  @@index([occurrenceId])
+  @@index([dailyWorkTaskId])
+  @@index([workId, createdAt])
+  @@index([type])
+}
